@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sudoku Demo - Backtracking & CSP (AC-3)</title>
+  <style>
+    :root {
+      --primary: #2c3e50;
+      --accent: #3498db;
+      --good: #27ae60;
+      --bad: #e74c3c;
+      --bg: #f4f6f8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell,
+        'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 24px;
+      color: var(--primary);
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.15);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #2c3e50, #3498db);
+      color: #fff;
+      padding: 22px 26px;
+    }
+    .header h1 {
+      margin: 0 0 4px 0;
+      font-weight: 600;
+    }
+    .header p { margin: 0; opacity: .9; }
+
+    .content {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 24px;
+      padding: 22px;
+    }
+    @media (max-width: 900px) {
+      .content { grid-template-columns: 1fr; }
+    }
+
+    .left, .right {
+      background: var(--bg);
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    .controls { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }
+    .controls .full { grid-column: 1 / -1; }
+    button, select {
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #cfd8dc;
+      background: white;
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--primary);
+    }
+    button.primary { background: linear-gradient(135deg, #3498db, #2980b9); color: #fff; border: none; }
+    button.good { background: linear-gradient(135deg, #27ae60, #1e8449); color: #fff; border: none; }
+    button.bad { background: linear-gradient(135deg, #e74c3c, #c0392b); color: #fff; border: none; }
+
+    .grid { 
+      display: grid; 
+      grid-template-columns: repeat(9, 1fr);
+      gap: 0; 
+      background: #000; 
+      border: 4px solid #000; 
+      aspect-ratio: 1/1;
+    }
+    .cell {
+      position: relative;
+      background: #fff;
+      border: 1px solid #bbb;
+    }
+    .cell input {
+      width: 100%; height: 100%;
+      text-align: center; font-size: 22px; font-weight: 600; color: #2c3e50;
+      border: none; outline: none; background: transparent;
+    }
+    .cell input:disabled { color: #1f4771; background: #ecf5ff; }
+    .cell.invalid input { background: #fdecea; color: #c0392b; }
+
+    /* Dòng đậm cho từng khối 3x3 */
+    .cell.r0, .cell.r3, .cell.r6 { border-top: 3px solid #000; }
+    .cell.c0, .cell.c3, .cell.c6 { border-left: 3px solid #000; }
+    .cell.r2, .cell.r5, .cell.r8 { border-bottom: 3px solid #000; }
+    .cell.c2, .cell.c5, .cell.c8 { border-right: 3px solid #000; }
+
+    .panel { background: white; border-radius: 10px; padding: 12px; margin-bottom: 10px; border: 1px solid #e0e0e0; }
+    .panel h3 { margin: 4px 0 10px 0; }
+    .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .stat { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; }
+
+    #log { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; background: #0f172a; color: #e2e8f0; border-radius: 8px; padding: 10px; max-height: 240px; overflow: auto; }
+    #log .ok { color: #86efac; }
+    #log .warn { color: #fbbf24; }
+    #log .err { color: #fca5a5; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Sudoku Demo: Backtracking & CSP (AC-3 + MRV)</h1>
+      <p>Trang đơn giản để minh hoạ 2 cách giải: quay lui và lan truyền ràng buộc.</p>
+    </div>
+
+    <div class="content">
+      <div class="left">
+        <div id="grid" class="grid" aria-label="Sudoku grid"></div>
+        <div class="controls" style="margin-top:12px">
+          <button class="bad" onclick="clearBoard()">✗ Xoá</button>
+          <button onclick="validateBoard()">✔ Kiểm tra</button>
+          <select id="puzzleSelect" class="full">
+            <option value="blank">— Bảng trống</option>
+            <option value="easy">Dễ (demo)</option>
+            <option value="hard">Khó (demo)</option>
+          </select>
+          <button onclick="loadSelectedPuzzle()">⬇ Nạp đề</button>
+          <button class="good" onclick="fillSolution('backtracking')">🚀 Giải (Backtracking)</button>
+          <button class="primary" onclick="fillSolution('csp')">🤖 Giải (CSP - AC3+MRV)</button>
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="panel">
+          <h3>Tóm tắt</h3>
+          <div class="stats">
+            <div class="stat"><strong>Thuật toán</strong><div id="statAlgo">—</div></div>
+            <div class="stat"><strong>Thời gian</strong><div id="statTime">—</div></div>
+            <div class="stat"><strong>Nút duyệt</strong><div id="statNodes">—</div></div>
+            <div class="stat"><strong>Backtracks</strong><div id="statBacktracks">—</div></div>
+            <div class="stat"><strong>Giá trị cắt (AC-3)</strong><div id="statPruned">—</div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Nhật ký</h3>
+          <div id="log" aria-live="polite">Chọn một đề và bấm nút Giải…</div>
+        </div>
+        <div class="panel">
+          <h3>Gợi ý trình bày</h3>
+          <ul>
+            <li><strong>Quay lui</strong>: thử 1-9, kiểm tra hợp lệ, đệ quy.</li>
+            <li><strong>CSP</strong>: mỗi ô là biến, miền {1..9}. AC-3 cắt miền, MRV chọn biến ít lựa chọn nhất.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ======= UI: Grid =======
+    const gridEl = document.getElementById('grid');
+    const N = 9;
+
+    function createGrid() {
+      gridEl.innerHTML = '';
+      for (let r = 0; r < N; r++) {
+        for (let c = 0; c < N; c++) {
+          const cell = document.createElement('div');
+          cell.className = `cell r${r % 3 === 0 ? r : ''} c${c % 3 === 0 ? c : ''}`.trim();
+          const input = document.createElement('input');
+          input.inputMode = 'numeric';
+          input.maxLength = 1;
+          input.setAttribute('aria-label', `Hàng ${r+1}, Cột ${c+1}`);
+          input.addEventListener('input', (e) => {
+            e.target.value = e.target.value.replace(/[^1-9]/g, '').slice(0, 1);
+            e.target.disabled = false; // allow editing user cells
+            validateBoard(false);
+          });
+          cell.appendChild(input);
+          gridEl.appendChild(cell);
+        }
+      }
+    }
+
+    function readBoard() {
+      const board = Array.from({ length: N }, () => Array(N).fill(0));
+      const inputs = gridEl.querySelectorAll('input');
+      inputs.forEach((inp, idx) => {
+        const r = Math.floor(idx / N); const c = idx % N;
+        const v = inp.value ? parseInt(inp.value, 10) : 0;
+        board[r][c] = Number.isFinite(v) ? v : 0;
+      });
+      return board;
+    }
+
+    function setBoard(board, lockGivens = false) {
+      const inputs = gridEl.querySelectorAll('input');
+      inputs.forEach((inp, idx) => {
+        const r = Math.floor(idx / N); const c = idx % N;
+        const val = board[r][c] || '';
+        inp.value = val;
+        if (lockGivens) {
+          inp.disabled = Boolean(val);
+        }
+      });
+    }
+
+    function clearBoard() {
+      const inputs = gridEl.querySelectorAll('input');
+      inputs.forEach(inp => { inp.value = ''; inp.disabled = false; });
+      logReset();
+      setStats();
+      validateBoard(false);
+    }
+
+    // ======= Validation =======
+    function isSafe(board, row, col, num) {
+      for (let i = 0; i < 9; i++) {
+        if (board[row][i] === num) return false;
+        if (board[i][col] === num) return false;
+      }
+      const br = Math.floor(row / 3) * 3; const bc = Math.floor(col / 3) * 3;
+      for (let r = br; r < br + 3; r++) {
+        for (let c = bc; c < bc + 3; c++) {
+          if (board[r][c] === num) return false;
+        }
+      }
+      return true;
+    }
+
+    function validateBoard(showMsg = true) {
+      const board = readBoard();
+      const cells = Array.from(gridEl.children);
+      cells.forEach(cell => cell.classList.remove('invalid'));
+      let ok = true;
+
+      // Check duplicates for filled cells
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          const v = board[r][c];
+          if (!v) continue;
+          // Temporarily clear and test
+          board[r][c] = 0;
+          const safe = isSafe(board, r, c, v);
+          board[r][c] = v;
+          if (!safe) {
+            ok = false;
+            cells[r * 9 + c].classList.add('invalid');
+          }
+        }
+      }
+      if (showMsg) log(ok ? 'Bảng hợp lệ hiện tại.' : 'Có xung đột trên bảng.', ok ? 'ok' : 'err');
+      return ok;
+    }
+
+    // ======= Solver: Backtracking =======
+    function solveBacktracking(board, stats) {
+      function findEmpty() {
+        for (let r = 0; r < 9; r++) {
+          for (let c = 0; c < 9; c++) {
+            if (board[r][c] === 0) return [r, c];
+          }
+        }
+        return null;
+      }
+      function bt() {
+        const pos = findEmpty();
+        if (!pos) return true;
+        const [r, c] = pos;
+        for (let num = 1; num <= 9; num++) {
+          stats.nodes++;
+          if (isSafe(board, r, c, num)) {
+            board[r][c] = num;
+            if (bt()) return true;
+            board[r][c] = 0; // backtrack
+            stats.backtracks++;
+          }
+        }
+        return false;
+      }
+      const ok = bt();
+      return ok ? board : null;
+    }
+
+    // ======= Solver: CSP (AC-3 + MRV) =======
+    function buildNeighbors() {
+      const key = (r,c) => `${r}-${c}`;
+      const neighbors = new Map();
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          const k = key(r,c);
+          neighbors.set(k, new Set());
+        }
+      }
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          const k = key(r,c);
+          // row and col
+          for (let i = 0; i < 9; i++) {
+            if (i !== c) neighbors.get(k).add(key(r,i));
+            if (i !== r) neighbors.get(k).add(key(i,c));
+          }
+          // block
+          const br = Math.floor(r/3)*3, bc = Math.floor(c/3)*3;
+          for (let rr = br; rr < br+3; rr++) {
+            for (let cc = bc; cc < bc+3; cc++) {
+              if (rr === r && cc === c) continue;
+              neighbors.get(k).add(key(rr,cc));
+            }
+          }
+        }
+      }
+      return { key, neighbors };
+    }
+
+    function initialDomains(board) {
+      const { key, neighbors } = buildNeighbors();
+      const domains = {};
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          if (board[r][c] !== 0) {
+            domains[key(r,c)] = [board[r][c]];
+          } else {
+            const poss = [];
+            for (let v = 1; v <= 9; v++) if (isSafe(board, r, c, v)) poss.push(v);
+            domains[key(r,c)] = poss.length ? poss : [1,2,3,4,5,6,7,8,9];
+          }
+        }
+      }
+      return { domains, key, neighbors };
+    }
+
+    function cloneDomains(domains) {
+      const out = {};
+      for (const k in domains) out[k] = domains[k].slice();
+      return out;
+    }
+
+    function AC3(domains, neighbors, initialQueue, stats) {
+      const queue = initialQueue.length ? [...initialQueue] : [];
+      if (queue.length === 0) {
+        for (const xi of Object.keys(domains)) {
+          for (const xj of neighbors.get(xi)) queue.push([xi, xj]);
+        }
+      }
+      const removeUnsupported = (xi, xj) => {
+        let revised = false;
+        const domXi = domains[xi];
+        for (let i = domXi.length - 1; i >= 0; i--) {
+          const vi = domXi[i];
+          const hasSupport = domains[xj].some(vj => vj !== vi);
+          if (!hasSupport) {
+            domXi.splice(i, 1);
+            if (stats) stats.pruned++;
+            revised = true;
+          }
+        }
+        return revised;
+      };
+      while (queue.length) {
+        const [xi, xj] = queue.shift();
+        if (removeUnsupported(xi, xj)) {
+          if (domains[xi].length === 0) return false;
+          for (const xk of neighbors.get(xi)) {
+            if (xk !== xj) queue.push([xk, xi]);
+          }
+          if (stats) stats.inferences++;
+        }
+      }
+      return true;
+    }
+
+    function selectMRV(domains) {
+      let bestKey = null, bestSize = Infinity;
+      for (const k of Object.keys(domains)) {
+        const size = domains[k].length;
+        if (size > 1 && size < bestSize) {
+          bestSize = size; bestKey = k;
+        }
+      }
+      return bestKey; // null if all assigned
+    }
+
+    function isCompleteDomains(domains) {
+      return Object.values(domains).every(d => d.length === 1);
+    }
+
+    function domainsToBoard(domains) {
+      const board = Array.from({ length: 9 }, () => Array(9).fill(0));
+      for (const k in domains) {
+        const [r, c] = k.split('-').map(Number);
+        board[r][c] = domains[k][0];
+      }
+      return board;
+    }
+
+    function solveCSP(board, stats) {
+      const { domains: baseDomains, key, neighbors } = initialDomains(board);
+      const domainsInit = cloneDomains(baseDomains);
+      const ok = AC3(domainsInit, neighbors, [], stats);
+      if (!ok) return null;
+
+      function backtrack(domains) {
+        if (isCompleteDomains(domains)) return domains;
+        const varKey = selectMRV(domains);
+        if (!varKey) return null;
+        const values = domains[varKey].slice();
+        for (const v of values) {
+          stats.nodes++;
+          const next = cloneDomains(domains);
+          next[varKey] = [v];
+          const queue = [];
+          for (const n of neighbors.get(varKey)) queue.push([n, varKey]);
+          if (AC3(next, neighbors, queue, stats)) {
+            const result = backtrack(next);
+            if (result) return result;
+          }
+          stats.backtracks++;
+        }
+        return null;
+      }
+
+      const finalDomains = backtrack(domainsInit);
+      return finalDomains ? domainsToBoard(finalDomains) : null;
+    }
+
+    // ======= Helpers: log & stats =======
+    const logEl = document.getElementById('log');
+    function logReset() { logEl.textContent = ''; }
+    function log(msg, cls = '') {
+      const line = document.createElement('div');
+      if (cls) line.className = cls;
+      line.textContent = `${new Date().toLocaleTimeString()} — ${msg}`;
+      logEl.appendChild(line);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setStats({ algo = '—', ms = '—', nodes = '—', backtracks = '—', pruned = '—' } = {}) {
+      document.getElementById('statAlgo').textContent = algo;
+      document.getElementById('statTime').textContent = typeof ms === 'number' ? `${ms.toFixed(1)} ms` : ms;
+      document.getElementById('statNodes').textContent = nodes;
+      document.getElementById('statBacktracks').textContent = backtracks;
+      document.getElementById('statPruned').textContent = pruned;
+    }
+
+    // ======= Presets =======
+    const PRESETS = {
+      // classic easy
+      easy: (
+        '530070000' +
+        '600195000' +
+        '098000060' +
+        '800060003' +
+        '400803001' +
+        '700020006' +
+        '060000280' +
+        '000419005' +
+        '000080079'
+      ),
+      // a harder benchmark puzzle
+      hard: (
+        '000000907' +
+        '000420180' +
+        '000705026' +
+        '100904000' +
+        '050000040' +
+        '000507009' +
+        '920108000' +
+        '034059000' +
+        '507000000'
+      )
+    };
+
+    function stringToBoard(str) {
+      const board = Array.from({ length: 9 }, () => Array(9).fill(0));
+      for (let i = 0; i < 81; i++) {
+        const r = Math.floor(i / 9), c = i % 9;
+        const ch = str[i];
+        board[r][c] = ch === '0' ? 0 : parseInt(ch, 10);
+      }
+      return board;
+    }
+
+    function loadPreset(name) {
+      if (name === 'blank') { clearBoard(); return; }
+      const board = stringToBoard(PRESETS[name]);
+      setBoard(board, /* lockGivens */ true);
+      validateBoard(false);
+      log(`Đã nạp đề ${name.toUpperCase()}.`, 'ok');
+    }
+
+    function loadSelectedPuzzle() {
+      const sel = document.getElementById('puzzleSelect').value;
+      loadPreset(sel);
+    }
+
+    // ======= Solve button handlers =======
+    function fillSolution(kind) {
+      const startBoard = readBoard();
+      if (!validateBoard(false)) {
+        log('Bảng hiện có xung đột. Hãy sửa trước khi giải.', 'err');
+        return;
+      }
+      const stats = { nodes: 0, backtracks: 0, inferences: 0, pruned: 0 };
+      const t0 = performance.now();
+      let solved = null;
+
+      if (kind === 'backtracking') {
+        log('Bắt đầu giải bằng Backtracking…');
+        solved = solveBacktracking(startBoard.map(r => r.slice()), stats);
+      } else {
+        log('Bắt đầu giải bằng CSP (AC-3 + MRV)…');
+        solved = solveCSP(startBoard.map(r => r.slice()), stats);
+      }
+      const ms = performance.now() - t0;
+
+      if (solved) {
+        setBoard(solved, /* lockGivens */ false);
+        setStats({ algo: kind === 'backtracking' ? 'Backtracking' : 'CSP (AC-3+MRV)', ms, nodes: stats.nodes, backtracks: stats.backtracks, pruned: stats.pruned });
+        log('Giải thành công!', 'ok');
+      } else {
+        setStats({ algo: kind === 'backtracking' ? 'Backtracking' : 'CSP (AC-3+MRV)', ms, nodes: stats.nodes, backtracks: stats.backtracks, pruned: stats.pruned });
+        log('Không tìm thấy lời giải.', 'err');
+      }
+    }
+
+    // Init
+    createGrid();
+    loadPreset('easy');
+  </script>
+</body>
+</html>
