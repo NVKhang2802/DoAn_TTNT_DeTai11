@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sudoku CSP Demo — Quay lui & Lan truyền ràng buộc</title>
+  <style>
+    :root {
+      --bg1: #0f2027;
+      --bg2: #203a43;
+      --bg3: #2c5364;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #2563eb;
+      --primary-2: #1d4ed8;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warn: #f59e0b;
+      --grid: #0b1220;
+      --peer: #fde68a;
+      --select: #a7f3d0;
+      --given: #e5e7eb;
+      --thin: #cbd5e1;
+      --thick: #94a3b8;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text);
+      background: linear-gradient(120deg, var(--bg1), var(--bg2), var(--bg3));
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 520px 1fr;
+      gap: 24px;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.15);
+      overflow: hidden;
+    }
+
+    .header {
+      color: white;
+      background: linear-gradient(120deg, #0ea5e9, #2563eb);
+      padding: 20px 24px;
+    }
+
+    .header h1 { margin: 0 0 6px; font-weight: 600; }
+    .header p { margin: 0; opacity: .9; }
+
+    .content { padding: 18px; }
+
+    /* Board */
+    .board-wrap {
+      display: grid;
+      place-items: center;
+      padding: 12px;
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(9, 52px);
+      grid-template-rows: repeat(9, 52px);
+      gap: 0;
+      background: #fff;
+      border: 3px solid var(--thick);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .cell {
+      width: 52px; height: 52px;
+      border: 1px solid var(--thin);
+      display: grid;
+      place-items: center;
+      position: relative;
+      background: #fff;
+      transition: background .15s ease, box-shadow .15s ease;
+    }
+
+    /* Thick borders for 3x3 blocks */
+    .cell.r3 { border-bottom: 3px solid var(--thick); }
+    .cell.r6 { border-bottom: 3px solid var(--thick); }
+    .cell.c3 { border-right: 3px solid var(--thick); }
+    .cell.c6 { border-right: 3px solid var(--thick); }
+
+    .cell.given { background: var(--given); font-weight: 700; color: #111827; }
+    .cell.selected { background: #ecfeff; box-shadow: inset 0 0 0 2px #06b6d4; }
+    .cell.peer { background: #fffbeb; }
+    .cell.conflict { background: #fee2e2; }
+    .cell.assigned { background: #ecfdf5; }
+    .cell.inferred { background: #eef2ff; }
+
+    .digit {
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .cell input {
+      width: 100%; height: 100%;
+      border: none;
+      outline: none;
+      text-align: center;
+      font-size: 20px;
+      background: transparent;
+      color: #111827;
+    }
+
+    .cell input:disabled { color: #111827; opacity: 0.9; font-weight: 700; }
+
+    /* Candidates */
+    .cands {
+      position: absolute;
+      inset: 2px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 1px;
+      font-size: 11px;
+      color: #6b7280;
+      pointer-events: none;
+    }
+    .cand { display: grid; place-items: center; }
+
+    /* Controls */
+    .controls { display: grid; gap: 12px; }
+
+    .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .row > * { flex: 0 0 auto; }
+
+    select, input[type="text"], input[type="number"] {
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      background: #fff;
+      color: #111827;
+      min-width: 160px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      background: var(--primary);
+      color: #fff;
+      font-weight: 600;
+      transition: transform .05s ease, background .2s ease, opacity .2s ease;
+    }
+    .btn:hover { background: var(--primary-2); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn.secondary { background: #6b7280; }
+    .btn.danger { background: var(--danger); }
+    .btn.success { background: var(--success); }
+    .btn.warn { background: var(--warn); color: #111827; }
+
+    .switch { display: inline-flex; align-items: center; gap: 6px; }
+    .switch input { width: 16px; height: 16px; }
+
+    .legend { font-size: 12px; color: var(--muted); }
+
+    /* Right panel */
+    .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .metric {
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    .metric .label { font-size: 12px; color: var(--muted); }
+    .metric .value { font-weight: 700; font-size: 18px; }
+
+    .log {
+      background: #0b1220;
+      color: #e5e7eb;
+      border-radius: 12px;
+      padding: 10px 12px;
+      height: 360px;
+      overflow-y: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.3;
+      border: 1px solid #1f2937;
+    }
+    .log .ok { color: #22c55e; }
+    .log .info { color: #38bdf8; }
+    .log .warn { color: #fbbf24; }
+    .log .err { color: #f87171; }
+
+    .footer-tip { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+    @media (max-width: 1100px) {
+      .container { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Left: Board and Controls -->
+    <div class="card">
+      <div class="header">
+        <h1>Sudoku CSP Demo</h1>
+        <p>Quay lui (Backtracking) & Lan truyền ràng buộc (Forward Checking, AC-3)</p>
+      </div>
+      <div class="content">
+        <div class="board-wrap">
+          <div id="board" class="board" aria-label="Sudoku board"></div>
+        </div>
+        <div class="controls">
+          <div class="row">
+            <label>
+              Thuật toán:
+              <select id="algoSelect">
+                <option value="bt">Quay lui (BT)</option>
+                <option value="fc">Quay lui + Forward Checking</option>
+                <option value="ac3">Quay lui + AC-3</option>
+              </select>
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="mrvChk" checked />
+              MRV
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="degChk" checked />
+              Degree
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="lcvChk" checked />
+              LCV
+            </label>
+            <label>
+              Tốc độ: <input id="speedRange" type="range" min="10" max="1500" value="250" />
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="candsChk" checked />
+              Hiển thị ứng viên
+            </label>
+          </div>
+          <div class="row">
+            <select id="puzzleSelect">
+              <option value="easy">Mức dễ</option>
+              <option value="medium">Mức vừa</option>
+              <option value="hard">Mức khó</option>
+              <option value="evil">Rất khó</option>
+            </select>
+            <button class="btn" id="newBtn">Tải đề</button>
+            <input id="importStr" type="text" placeholder="Dán chuỗi 81 ký tự (0/.)" style="min-width:360px" />
+            <button class="btn secondary" id="importBtn">Nhập</button>
+            <button class="btn warn" id="clearBtn">Xóa nhập tay</button>
+            <button class="btn" id="resetBtn">Khôi phục đề</button>
+          </div>
+          <div class="row">
+            <button class="btn" id="stepBtn">Bước</button>
+            <button class="btn success" id="playBtn">Tự động</button>
+            <button class="btn" id="solveBtn">Giải hết</button>
+            <button class="btn danger" id="stopBtn" disabled>Dừng</button>
+          </div>
+          <div class="legend">Chú thích: ô xanh nhạt = ô đang xét, vàng = lân cận, đỏ = xung đột, xanh lá = gán thành công, tím nhạt = suy luận.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Metrics and Logs -->
+    <div class="card">
+      <div class="header">
+        <h1>Trình diễn CSP</h1>
+        <p>Thống kê, nhật ký thao tác và diễn giải bước</p>
+      </div>
+      <div class="content">
+        <div class="metrics" style="margin-bottom: 12px;">
+          <div class="metric"><div class="label">Ô đã gán</div><div class="value" id="mAssigned">0</div></div>
+          <div class="metric"><div class="label">Ô chưa gán</div><div class="value" id="mUnassigned">81</div></div>
+          <div class="metric"><div class="label">Nút đã duyệt</div><div class="value" id="mNodes">0</div></div>
+          <div class="metric"><div class="label">Lần quay lui</div><div class="value" id="mBacktracks">0</div></div>
+          <div class="metric"><div class="label">Suy luận/Loại bỏ</div><div class="value" id="mInferences">0</div></div>
+          <div class="metric"><div class="label">Trạng thái</div><div class="value" id="mStatus">Sẵn sàng</div></div>
+        </div>
+        <div class="log" id="log"></div>
+        <div class="footer-tip">Mẹo: Bạn có thể nhập tay số vào các ô trống trước khi giải. Dùng chuột chọn ô, gõ 1-9, hoặc xóa bằng Backspace/Delete.</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ---------- Utilities ----------
+    const range = (n) => Array.from({ length: n }, (_, i) => i);
+    const cloneSet = (s) => new Set([...s]);
+    const DIGITS = range(9).map((i) => i + 1);
+
+    function idx(r, c) { return r * 9 + c; }
+    function rc(index) { return [Math.floor(index / 9), index % 9]; }
+    function boxId(r, c) { return Math.floor(r / 3) * 3 + Math.floor(c / 3); }
+
+    // ---------- Sudoku neighbors ----------
+    const NEIGHBORS = (() => {
+      const peers = Array.from({ length: 81 }, () => new Set());
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          const i = idx(r, c);
+          // Row and Column peers
+          for (let cc = 0; cc < 9; cc++) if (cc !== c) peers[i].add(idx(r, cc));
+          for (let rr = 0; rr < 9; rr++) if (rr !== r) peers[i].add(idx(rr, c));
+          // Box peers
+          const br = Math.floor(r / 3) * 3, bc = Math.floor(c / 3) * 3;
+          for (let rr = br; rr < br + 3; rr++) {
+            for (let cc = bc; cc < bc + 3; cc++) {
+              const j = idx(rr, cc);
+              if (j !== i) peers[i].add(j);
+            }
+          }
+        }
+      }
+      return peers.map((s) => [...s]);
+    })();
+
+    // ---------- Sample puzzles ----------
+    const PUZZLES = {
+      easy: "530070000600195000098000060800060003400803001700020006060000280000419005000080079",
+      medium: "009000000007003000300500020040020700000705000001030060050006004000200800000000900",
+      hard: "000000907000420180000705026100904000050000040000507009920108000034059000507000000",
+      evil: "000000000000000000000000000000000000000000000000000000000000000000000000000000000", // all blank for demo
+    };
+
+    // ---------- DOM Elements ----------
+    const boardEl = document.getElementById('board');
+    const algoSelect = document.getElementById('algoSelect');
+    const mrvChk = document.getElementById('mrvChk');
+    const degChk = document.getElementById('degChk');
+    const lcvChk = document.getElementById('lcvChk');
+    const candsChk = document.getElementById('candsChk');
+
+    const mAssigned = document.getElementById('mAssigned');
+    const mUnassigned = document.getElementById('mUnassigned');
+    const mNodes = document.getElementById('mNodes');
+    const mBacktracks = document.getElementById('mBacktracks');
+    const mInferences = document.getElementById('mInferences');
+    const mStatus = document.getElementById('mStatus');
+
+    const logEl = document.getElementById('log');
+    const puzzleSelect = document.getElementById('puzzleSelect');
+    const newBtn = document.getElementById('newBtn');
+    const importStr = document.getElementById('importStr');
+    const importBtn = document.getElementById('importBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const stepBtn = document.getElementById('stepBtn');
+    const playBtn = document.getElementById('playBtn');
+    const solveBtn = document.getElementById('solveBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const speedRange = document.getElementById('speedRange');
+
+    // ---------- App State ----------
+    const appState = {
+      initialGrid: Array(81).fill(0), // givens
+      givensMask: Array(81).fill(false),
+      inputs: [], // input elements per cell
+      selected: -1,
+      showCandidates: true,
+      // solver
+      solver: null,
+      playing: false,
+      playTimer: null,
+      speedMs: 250,
+      // metrics
+      nodes: 0,
+      backtracks: 0,
+      inferences: 0,
+    };
+
+    // ---------- UI: Build board ----------
+    function buildBoard() {
+      boardEl.innerHTML = '';
+      appState.inputs = [];
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 9; c++) {
+          const i = idx(r, c);
+          const cell = document.createElement('div');
+          cell.className = 'cell' + (r === 2 ? ' r3' : '') + (r === 5 ? ' r6' : '') + (c === 2 ? ' c3' : '') + (c === 5 ? ' c6' : '');
+          const input = document.createElement('input');
+          input.setAttribute('inputmode', 'numeric');
+          input.setAttribute('maxlength', '1');
+          input.addEventListener('focus', () => selectCell(i));
+          input.addEventListener('input', (e) => onCellInput(i, e.target.value));
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace' || e.key === 'Delete') onCellInput(i, '');
+            const moves = { ArrowUp: -9, ArrowDown: 9, ArrowLeft: -1, ArrowRight: 1 };
+            if (moves[e.key] !== undefined) {
+              e.preventDefault();
+              const j = i + moves[e.key];
+              if (j >= 0 && j < 81 && !(i % 9 === 8 && e.key === 'ArrowRight') && !(i % 9 === 0 && e.key === 'ArrowLeft'))
+                appState.inputs[j].focus();
+            }
+          });
+          cell.appendChild(input);
+          const cands = document.createElement('div');
+          cands.className = 'cands';
+          for (let d = 1; d <= 9; d++) {
+            const cd = document.createElement('div');
+            cd.className = 'cand';
+            cd.textContent = d;
+            cands.appendChild(cd);
+          }
+          cell.appendChild(cands);
+          boardEl.appendChild(cell);
+          appState.inputs[i] = input;
+        }
+      }
+    }
+
+    function selectCell(i) {
+      appState.selected = i;
+      refreshHighlights();
+    }
+
+    function refreshHighlights(target=-1, peers=[]) {
+      const cells = boardEl.querySelectorAll('.cell');
+      cells.forEach((el) => el.classList.remove('selected', 'peer', 'conflict', 'assigned', 'inferred'));
+      if (target >= 0) {
+        cells[target].classList.add('selected');
+        peers.forEach((p) => cells[p].classList.add('peer'));
+      } else if (appState.selected >= 0) {
+        const i = appState.selected;
+        cells[i].classList.add('selected');
+        NEIGHBORS[i].forEach((p) => cells[p].classList.add('peer'));
+      }
+    }
+
+    function setGiven(i, val) {
+      const inp = appState.inputs[i];
+      inp.value = val ? String(val) : '';
+      inp.disabled = !!val;
+      const cellEl = inp.parentElement;
+      cellEl.classList.toggle('given', !!val);
+    }
+
+    function onCellInput(i, v) {
+      if (appState.solver) return; // lock editing while solving
+      if (appState.givensMask[i]) return;
+      const d = parseInt(v, 10);
+      if (!v) {
+        appState.initialGrid[i] = 0;
+      } else if (!Number.isNaN(d) && d >= 1 && d <= 9) {
+        appState.initialGrid[i] = d;
+      } else {
+        appState.inputs[i].value = '';
+        return;
+      }
+      updateCandidatesView();
+      updateMetricsStatus();
+    }
+
+    function loadPuzzleFromString(s) {
+      const str = (s || '').replace(/\./g, '0');
+      if (str.length !== 81 || /[^0-9]/.test(str)) {
+        toast('err', 'Chuỗi không hợp lệ. Cần 81 ký tự 0-9 hoặc dấu chấm.');
+        return false;
+      }
+      const arr = str.split('').map((ch) => parseInt(ch, 10));
+      appState.initialGrid = arr.map((v) => (Number.isNaN(v) ? 0 : v));
+      appState.givensMask = appState.initialGrid.map((v) => v !== 0);
+      for (let i = 0; i < 81; i++) setGiven(i, appState.initialGrid[i]);
+      updateCandidatesView();
+      updateMetricsStatus();
+      appState.solver = null;
+      setRunButtonsEnabled(true);
+      setPlay(false);
+      clearLog();
+      toast('ok', 'Đã tải đề.');
+      return true;
+    }
+
+    function updateCandidatesView(domains=null) {
+      const show = appState.showCandidates = candsChk.checked;
+      const cells = boardEl.querySelectorAll('.cell');
+      for (let i = 0; i < 81; i++) {
+        const candWrap = cells[i].querySelector('.cands');
+        candWrap.style.display = show ? 'grid' : 'none';
+        const value = appState.inputs[i].value.trim();
+        const allowed = domains ? domains[i] : null;
+        for (let d = 1; d <= 9; d++) {
+          const cd = candWrap.children[d-1];
+          const showDigit = !value && (!domains || (allowed && allowed.has(d)));
+          cd.style.visibility = showDigit ? 'visible' : 'hidden';
+          cd.style.opacity = showDigit ? '1' : '0';
+        }
+      }
+    }
+
+    function updateMetricsStatus() {
+      const assigned = appState.inputs.filter((inp) => inp.value && inp.value !== '0').length;
+      mAssigned.textContent = assigned;
+      mUnassigned.textContent = 81 - assigned;
+      mNodes.textContent = appState.nodes;
+      mBacktracks.textContent = appState.backtracks;
+      mInferences.textContent = appState.inferences;
+    }
+
+    function setRunButtonsEnabled(enabled) {
+      stepBtn.disabled = !enabled;
+      playBtn.disabled = !enabled;
+      solveBtn.disabled = !enabled;
+      stopBtn.disabled = enabled;
+    }
+
+    function setPlay(playing) {
+      appState.playing = playing;
+      if (!playing && appState.playTimer) {
+        clearInterval(appState.playTimer);
+        appState.playTimer = null;
+      }
+      playBtn.textContent = playing ? 'Đang chạy…' : 'Tự động';
+      playBtn.disabled = playing;
+      stopBtn.disabled = !playing;
+    }
+
+    function toast(kind, message) {
+      const cls = kind === 'ok' ? 'ok' : kind === 'warn' ? 'warn' : kind === 'err' ? 'err' : 'info';
+      const p = document.createElement('div');
+      p.className = cls;
+      const time = new Date().toLocaleTimeString();
+      p.textContent = `[${time}] ${message}`;
+      logEl.appendChild(p);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function clearLog() { logEl.innerHTML = ''; }
+
+    // ---------- CSP Core ----------
+    class CSPState {
+      constructor(givensArray) {
+        this.assignment = Array(81).fill(0);
+        this.domains = Array.from({ length: 81 }, () => new Set(DIGITS));
+        this.givens = Array(81).fill(false);
+        this.unassignedCount = 81;
+        // Apply givens
+        for (let i = 0; i < 81; i++) {
+          const v = givensArray[i] || 0;
+          if (v) {
+            this.givens[i] = true;
+            this.assignment[i] = v;
+            this.domains[i] = new Set([v]);
+            this.unassignedCount--;
+          }
+        }
+      }
+
+      isConsistent(i, value) {
+        for (const j of NEIGHBORS[i]) {
+          const aj = this.assignment[j];
+          if (aj === value) return false;
+        }
+        return true;
+      }
+
+      selectUnassignedVariable({ useMRV, useDegree }) {
+        let candidates = [];
+        for (let i = 0; i < 81; i++) if (this.assignment[i] === 0) candidates.push(i);
+        if (candidates.length === 0) return -1;
+        if (!useMRV && !useDegree) return candidates[0];
+
+        let best = null;
+        for (const i of candidates) {
+          const domainSize = this.domains[i].size;
+          const degree = NEIGHBORS[i].filter((j) => this.assignment[j] === 0).length;
+          const score = (useMRV ? domainSize : 10) * 100 + (useDegree ? (10 - degree) : 0);
+          const rec = { i, domainSize, degree, score };
+          if (!best || rec.score < best.score || (rec.score === best.score && rec.degree > best.degree)) best = rec;
+        }
+        return best.i;
+      }
+
+      orderDomainValues(i, { useLCV }) {
+        const values = [...this.domains[i]];
+        if (!useLCV) return values;
+        const impact = (v) => {
+          let cuts = 0;
+          for (const j of NEIGHBORS[i]) {
+            if (this.assignment[j] !== 0) continue;
+            if (this.domains[j].has(v)) cuts++;
+          }
+          return cuts;
+        };
+        return values.sort((a, b) => impact(a) - impact(b)); // least constraining first
+      }
+    }
+
+    class CSPStepper {
+      constructor(givensArray, options) {
+        this.state = new CSPState(givensArray);
+        this.options = options; // {mode:'bt'|'fc'|'ac3', useMRV, useDegree, useLCV}
+        this.stack = []; // DFS frames
+        this.finished = false;
+        this.failed = false;
+        this.nodes = 0;
+        this.backtracks = 0;
+        this.inferences = 0;
+        this.ac3Queue = []; // for ac3 mode
+
+        // Initial AC-3 if chosen
+        if (this.options.mode === 'ac3') {
+          this.enqueueAllArcs();
+        }
+      }
+
+      enqueueAllArcs() {
+        this.ac3Queue = [];
+        for (let i = 0; i < 81; i++) {
+          for (const j of NEIGHBORS[i]) this.ac3Queue.push([i, j]);
+        }
+      }
+
+      nextStep() {
+        if (this.finished || this.failed) return { type: 'halt' };
+
+        // If AC-3 pending, process one arc per step
+        if (this.options.mode === 'ac3' && this.ac3Queue.length > 0) {
+          const [xi, xj] = this.ac3Queue.shift();
+          return this.reviseArc(xi, xj);
+        }
+
+        // Check if complete
+        if (this.state.unassignedCount === 0) {
+          this.finished = true;
+          return { type: 'solution_found' };
+        }
+
+        // If no active frame, select a new variable
+        if (this.stack.length === 0 || this.stack[this.stack.length - 1].stage === 'doneVar') {
+          const i = this.state.selectUnassignedVariable({ useMRV: this.options.useMRV, useDegree: this.options.useDegree });
+          if (i < 0) { this.finished = true; return { type: 'solution_found' }; }
+          const values = this.state.orderDomainValues(i, { useLCV: this.options.useLCV });
+          const frame = { i, values, k: 0, stage: 'try', removals: [], assigned: false };
+          this.stack.push(frame);
+          return { type: 'select_var', i, domainSize: this.state.domains[i].size, degree: NEIGHBORS[i].filter(j => this.state.assignment[j] === 0).length };
+        }
+
+        // Active frame
+        const frame = this.stack[this.stack.length - 1];
+        const i = frame.i;
+
+        // Try values sequentially
+        if (frame.stage === 'try') {
+          if (frame.k >= frame.values.length) {
+            // Exhausted -> backtrack
+            this.backtracks++;
+            // undo removals
+            for (let r = frame.removals.length - 1; r >= 0; r--) {
+              const { j, val } = frame.removals[r];
+              this.state.domains[j].add(val);
+            }
+            if (frame.assigned) {
+              this.state.assignment[i] = 0;
+              this.state.unassignedCount++;
+            }
+            this.stack.pop();
+            if (this.stack.length > 0) this.stack[this.stack.length - 1].stage = 'try';
+            return { type: 'backtrack', i };
+          }
+
+          const v = frame.values[frame.k++];
+          this.nodes++;
+          return { type: 'try_value', i, v };
+        }
+
+        if (frame.stage === 'assign') {
+          // commit assignment
+          this.state.assignment[i] = frame.v;
+          if (!frame.assigned) { this.state.unassignedCount--; frame.assigned = true; }
+          // Propagate
+          if (this.options.mode === 'fc' || this.options.mode === 'ac3') {
+            // Forward checking: remove v from peers
+            for (const j of NEIGHBORS[i]) {
+              if (this.state.assignment[j] !== 0) continue;
+              if (this.state.domains[j].has(frame.v)) {
+                this.state.domains[j].delete(frame.v);
+                frame.removals.push({ j, val: frame.v });
+                this.inferences++;
+                return { type: 'forward_check_eliminate', i, j, v: frame.v };
+              }
+            }
+            // If any domain becomes empty -> failure
+            for (const j of NEIGHBORS[i]) {
+              if (this.state.assignment[j] === 0 && this.state.domains[j].size === 0) {
+                frame.stage = 'try';
+                return { type: 'failure_domain_wipeout', j };
+              }
+            }
+            // AC-3 enqueue after FC if mode ac3
+            if (this.options.mode === 'ac3') {
+              this.enqueueAllArcs();
+            }
+          }
+          // Move to next variable
+          frame.stage = 'doneVar';
+          return { type: 'assign', i, v: frame.v };
+        }
+
+        if (frame.stage === 'enforce') {
+          // In case we want to enforce singleton propagation (not used now)
+        }
+
+        // After a try_value step, decide if consistent and go to assign or continue
+        if (frame.stage === 'try' || frame.stage === 'continue') {
+          const v = frame.values[frame.k - 1];
+          if (this.state.isConsistent(i, v) && this.state.domains[i].has(v)) {
+            frame.v = v;
+            frame.stage = 'assign';
+            return { type: 'consistent', i, v };
+          } else {
+            frame.stage = 'try';
+            return { type: 'inconsistent', i, v };
+          }
+        }
+
+        return { type: 'noop' };
+      }
+
+      // Revise arc (xi, xj) for AC-3, one step at a time
+      reviseArc(xi, xj) {
+        const Di = this.state.domains[xi];
+        const Dj = this.state.domains[xj];
+        if (this.state.assignment[xi] !== 0 || this.state.assignment[xj] !== 0) {
+          return { type: 'ac3_arc_skip', xi, xj };
+        }
+        // For each value in Di, if no supporting value in Dj, remove it
+        for (const vi of [...Di]) {
+          let supported = false;
+          for (const vj of Dj) { if (vj !== vi) { supported = true; break; } }
+          if (!supported) {
+            Di.delete(vi);
+            this.inferences++;
+            // If wipeout
+            if (Di.size === 0) {
+              this.failed = true; return { type: 'failure_domain_wipeout', j: xi };
+            }
+            return { type: 'ac3_reduce', xi, xj, removed: vi };
+          }
+        }
+        return { type: 'ac3_arc_ok', xi, xj };
+      }
+    }
+
+    // ---------- Orchestration ----------
+    function gatherOptions() {
+      return {
+        mode: algoSelect.value, // 'bt' | 'fc' | 'ac3'
+        useMRV: mrvChk.checked,
+        useDegree: degChk.checked,
+        useLCV: lcvChk.checked,
+      };
+    }
+
+    function getGivensFromUI() {
+      const arr = Array(81).fill(0);
+      for (let i = 0; i < 81; i++) {
+        const v = parseInt(appState.inputs[i].value, 10);
+        arr[i] = Number.isNaN(v) ? 0 : v;
+      }
+      return arr;
+    }
+
+    function beginSolve() {
+      if (appState.solver) return;
+      const givens = getGivensFromUI();
+      // Validate givens: no conflict
+      for (let i = 0; i < 81; i++) {
+        const v = givens[i];
+        if (!v) continue;
+        for (const j of NEIGHBORS[i]) {
+          if (givens[j] === v) {
+            toast('err', 'Đề có xung đột ở các ô liên quan. Hãy kiểm tra lại.');
+            return false;
+          }
+        }
+      }
+      appState.nodes = 0; appState.backtracks = 0; appState.inferences = 0;
+      appState.solver = new CSPStepper(givens, gatherOptions());
+      appState.givensMask = givens.map((v) => v !== 0);
+      setRunButtonsEnabled(true);
+      mStatus.textContent = 'Đang giải…';
+      toast('info', 'Bắt đầu giải.');
+      updateCandidatesView(appState.solver.state.domains);
+      updateMetricsStatus();
+      return true;
+    }
+
+    function applyStep(step) {
+      const cells = boardEl.querySelectorAll('.cell');
+      const peersOf = (i) => NEIGHBORS[i];
+      const mark = (i, cls) => { if (i >= 0) cells[i].classList.add(cls); };
+      const clearMarks = () => cells.forEach((c) => c.classList.remove('selected','peer','conflict','assigned','inferred'));
+      const put = (i, v) => { appState.inputs[i].value = v ? String(v) : ''; };
+
+      switch (step.type) {
+        case 'select_var': {
+          clearMarks(); mark(step.i, 'selected'); peersOf(step.i).forEach((p) => mark(p, 'peer'));
+          toast('info', `Chọn ô ${coordStr(step.i)} (Miền ${appState.solver.state.domains[step.i].size} giá trị).`);
+          break;
+        }
+        case 'try_value': {
+          refreshHighlights(step.i, peersOf(step.i));
+          toast('info', `Thử gán ${step.v} cho ô ${coordStr(step.i)}.`);
+          appState.nodes = appState.solver.nodes; updateMetricsStatus();
+          // Transition: immediately ask solver to decide consistency
+          appState.solver.stack[appState.solver.stack.length - 1].stage = 'continue';
+          break;
+        }
+        case 'consistent': {
+          mark(step.i, 'selected'); toast('ok', `Hợp lệ: ${step.v} tại ${coordStr(step.i)}.`);
+          appState.solver.stack[appState.solver.stack.length - 1].stage = 'assign';
+          break;
+        }
+        case 'inconsistent': {
+          mark(step.i, 'conflict'); toast('err', `Không hợp lệ: ${step.v} mâu thuẫn với ràng buộc.`);
+          updateMetricsStatus();
+          break;
+        }
+        case 'assign': {
+          put(step.i, step.v); mark(step.i, 'assigned');
+          toast('ok', `Gán ${step.v} cho ${coordStr(step.i)}.`);
+          updateCandidatesView(appState.solver.state.domains);
+          updateMetricsStatus();
+          break;
+        }
+        case 'forward_check_eliminate': {
+          mark(step.j, 'inferred');
+          toast('warn', `Loại bỏ ${step.v} khỏi miền của ${coordStr(step.j)} do ${coordStr(step.i)} = ${step.v}.`);
+          appState.inferences = appState.solver.inferences; updateCandidatesView(appState.solver.state.domains); updateMetricsStatus();
+          break;
+        }
+        case 'failure_domain_wipeout': {
+          mark(step.j, 'conflict');
+          toast('err', `Miền của ${coordStr(step.j)} rỗng → quay lui.`);
+          break;
+        }
+        case 'backtrack': {
+          mark(step.i, 'conflict');
+          appState.backtracks = appState.solver.backtracks; updateMetricsStatus();
+          toast('err', `Quay lui tại ${coordStr(step.i)}.`);
+          // Remove UI value if any
+          if (appState.inputs[step.i].value && !appState.givensMask[step.i]) put(step.i, '');
+          updateCandidatesView(appState.solver.state.domains);
+          break;
+        }
+        case 'ac3_arc_ok': {
+          // Optional: visualize arcs
+          break;
+        }
+        case 'ac3_arc_skip': {
+          break;
+        }
+        case 'ac3_reduce': {
+          mark(step.xi, 'inferred');
+          toast('warn', `AC-3: Loại ${step.removed} khỏi miền của ${coordStr(step.xi)} (ràng buộc với ${coordStr(step.xj)}).`);
+          appState.inferences = appState.solver.inferences; updateCandidatesView(appState.solver.state.domains); updateMetricsStatus();
+          break;
+        }
+        case 'solution_found': {
+          mStatus.textContent = 'Hoàn tất!';
+          toast('ok', 'Đã tìm thấy nghiệm.');
+          // Fill any remaining assignments (AC-3 may have done many)
+          for (let i = 0; i < 81; i++) {
+            const a = appState.solver.state.assignment[i];
+            if (a && !appState.inputs[i].value) appState.inputs[i].value = String(a);
+          }
+          updateCandidatesView(appState.solver.state.domains);
+          setRunButtonsEnabled(false);
+          setPlay(false);
+          appState.solver.finished = true;
+          break;
+        }
+        case 'halt':
+        case 'noop':
+        default:
+          break;
+      }
+    }
+
+    function coordStr(i) {
+      const [r,c] = rc(i);
+      return `r${r+1}c${c+1}`;
+    }
+
+    function stepOnce() {
+      if (!appState.solver) {
+        const ok = beginSolve();
+        if (!ok) return;
+      }
+      const step = appState.solver.nextStep();
+      if (step.type === 'halt') {
+        setRunButtonsEnabled(false); setPlay(false);
+        return;
+      }
+      applyStep(step);
+      // If solver signaled a failure wipeout, resume backtracking automatically on subsequent step
+      updateMetricsStatus();
+    }
+
+    function playAuto() {
+      if (!appState.solver) {
+        const ok = beginSolve();
+        if (!ok) return;
+      }
+      setRunButtonsEnabled(false); // disable manual step while playing
+      setPlay(true);
+      const tick = () => {
+        const step = appState.solver.nextStep();
+        if (step.type === 'halt') { setPlay(false); setRunButtonsEnabled(false); return; }
+        applyStep(step);
+        updateMetricsStatus();
+        if (appState.solver.finished || appState.solver.failed) { setPlay(false); setRunButtonsEnabled(false); }
+      };
+      const interval = Math.max(10, parseInt(speedRange.value, 10) || 250);
+      appState.playTimer = setInterval(tick, interval);
+    }
+
+    function solveToEnd() {
+      if (!appState.solver) {
+        const ok = beginSolve();
+        if (!ok) return;
+      }
+      setRunButtonsEnabled(false);
+      const run = () => {
+        const step = appState.solver.nextStep();
+        if (step.type === 'halt') { setRunButtonsEnabled(false); return; }
+        applyStep(step);
+        if (!(appState.solver.finished || appState.solver.failed)) {
+          setTimeout(run, 0); // yield to UI
+        } else {
+          setRunButtonsEnabled(false);
+        }
+      };
+      run();
+    }
+
+    function stopRun() {
+      setPlay(false);
+      setRunButtonsEnabled(true);
+      mStatus.textContent = 'Tạm dừng';
+      toast('warn', 'Đã dừng.');
+    }
+
+    function clearUserInputs() {
+      for (let i = 0; i < 81; i++) if (!appState.givensMask[i]) setGiven(i, 0);
+      updateCandidatesView();
+      updateMetricsStatus();
+    }
+
+    function resetPuzzle() {
+      loadPuzzleFromString(appState.initialGrid.map((v) => v || 0).join(''));
+    }
+
+    // ---------- Event wiring ----------
+    newBtn.addEventListener('click', () => {
+      const key = puzzleSelect.value;
+      loadPuzzleFromString(PUZZLES[key]);
+    });
+    importBtn.addEventListener('click', () => {
+      const s = importStr.value.trim();
+      if (loadPuzzleFromString(s)) puzzleSelect.value = 'custom';
+    });
+    clearBtn.addEventListener('click', clearUserInputs);
+    resetBtn.addEventListener('click', () => loadPuzzleFromString(appState.initialGrid.map(v => v || 0).join('')));
+
+    candsChk.addEventListener('change', () => updateCandidatesView(appState.solver ? appState.solver.state.domains : null));
+
+    stepBtn.addEventListener('click', stepOnce);
+    playBtn.addEventListener('click', playAuto);
+    solveBtn.addEventListener('click', solveToEnd);
+    stopBtn.addEventListener('click', stopRun);
+    speedRange.addEventListener('input', () => { appState.speedMs = Math.max(10, parseInt(speedRange.value, 10) || 250); if (appState.playing) { setPlay(false); } });
+
+    // Changing algorithm or heuristics resets solver (keeps current puzzle inputs)
+    [algoSelect, mrvChk, degChk, lcvChk].forEach((el) => el.addEventListener('change', () => {
+      appState.solver = null; setRunButtonsEnabled(true); setPlay(false); mStatus.textContent = 'Sẵn sàng'; toast('info', 'Đã cập nhật cấu hình giải.');
+      updateCandidatesView();
+    }));
+
+    // ---------- Init ----------
+    buildBoard();
+    loadPuzzleFromString(PUZZLES.easy);
+    updateCandidatesView();
+    updateMetricsStatus();
+  </script>
+</body>
+</html>
