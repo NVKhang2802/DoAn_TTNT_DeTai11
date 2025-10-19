@@ -364,7 +364,8 @@
 
     // ---------- App State ----------
     const appState = {
-      initialGrid: Array(81).fill(0), // givens
+      initialGrid: Array(81).fill(0), // current baseline (same as original at load)
+      originalGrid: Array(81).fill(0), // immutable copy of loaded puzzle to reset
       givensMask: Array(81).fill(false),
       inputs: [], // input elements per cell
       selected: -1,
@@ -451,9 +452,9 @@
       if (appState.givensMask[i]) return;
       const d = parseInt(v, 10);
       if (!v) {
-        appState.initialGrid[i] = 0;
+        // user cleared input
       } else if (!Number.isNaN(d) && d >= 1 && d <= 9) {
-        appState.initialGrid[i] = d;
+        // user entered valid digit
       } else {
         appState.inputs[i].value = '';
         return;
@@ -469,7 +470,8 @@
         return false;
       }
       const arr = str.split('').map((ch) => parseInt(ch, 10));
-      appState.initialGrid = arr.map((v) => (Number.isNaN(v) ? 0 : v));
+      appState.originalGrid = arr.map((v) => (Number.isNaN(v) ? 0 : v));
+      appState.initialGrid = appState.originalGrid.slice();
       appState.givensMask = appState.initialGrid.map((v) => v !== 0);
       for (let i = 0; i < 81; i++) setGiven(i, appState.initialGrid[i]);
       updateCandidatesView();
@@ -960,7 +962,7 @@
     }
 
     function resetPuzzle() {
-      loadPuzzleFromString(appState.initialGrid.map((v) => v || 0).join(''));
+      loadPuzzleFromString(appState.originalGrid.map((v) => v || 0).join(''));
     }
 
     // ---------- Event wiring ----------
@@ -973,7 +975,7 @@
       if (loadPuzzleFromString(s)) puzzleSelect.value = 'custom';
     });
     clearBtn.addEventListener('click', clearUserInputs);
-    resetBtn.addEventListener('click', () => loadPuzzleFromString(appState.initialGrid.map(v => v || 0).join('')));
+    resetBtn.addEventListener('click', () => resetPuzzle());
 
     candsChk.addEventListener('change', () => updateCandidatesView(appState.solver ? appState.solver.state.domains : null));
 
